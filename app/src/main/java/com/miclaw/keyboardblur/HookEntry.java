@@ -1,5 +1,6 @@
 package com.miclaw.keyboardblur;
 
+import android.app.Dialog;
 import android.content.Context;
 import android.content.res.Configuration;
 import android.view.View;
@@ -140,13 +141,19 @@ public class HookEntry implements IXposedHookLoadPackage {
         android.inputmethodservice.InputMethodService service =
                 (android.inputmethodservice.InputMethodService) param.thisObject;
         Context context = service.getApplicationContext();
-        Window window = service.getWindow();
-        BlurHelper.applyBlur(context, window);
+        Dialog dialog = service.getWindow();
+        if (dialog != null) {
+            Window window = dialog.getWindow();
+            if (window != null) {
+                BlurHelper.applyBlur(context, window);
+            }
+        }
     }
 
     private Window getServiceWindow(Object service) {
         try {
-            return ((android.inputmethodservice.InputMethodService) service).getWindow();
+            Dialog dialog = ((android.inputmethodservice.InputMethodService) service).getWindow();
+            return dialog != null ? dialog.getWindow() : null;
         } catch (Throwable t) {
             return null;
         }
