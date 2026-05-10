@@ -1,0 +1,44 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">键盘模糊</string>
+    <string name="module_description">为输入法键盘添加背景模糊效果</string>
+
+    <!-- 设置页 -->
+    <string name="settings_title">键盘模糊设置</string>
+    <string name="pref_global_enable">启用模糊效果</string>
+    <string name="pref_global_enable_desc">开启后为所有输入法添加背景模糊</string>
+    <string name="pref_blur_portrait">竖屏模糊半径</string>
+    <string name="pref_blur_landscape">横屏模糊半径</string>
+    <string name="pref_corner_enable">启用圆角</string>
+    <string name="pref_corner_enable_desc">为键盘窗口添加圆角</string>
+    <string name="pref_corner_radius">圆角半径 (dp)</string>
+    <string name="pref_overlay_alpha">遮罩透明度 (%)</string>
+    <string name="pref_overlay_alpha_desc">在模糊层上叠加半透明遮罩</string>
+    <string name="pref_dim_amount">背景变暗量 (%)</string>
+    <string name="pref_dim_amount_desc">模糊层的变暗程度</string>
+    <string name="pref_scope_title">作用域</string>
+    <string name="pref_scope_desc">在 LSPosed 管理器中选择需要生效的输入法</string>
+    <string name="btn_restart_ime">重启输入法</string>
+    <string name="btn_apply_test">应用测试</string>
+    <string name="status_active">模块已激活</string>
+    <string name="status_inactive">模块未激活</string>
+    <string name="status_scope_warning">请在 LSPosed 中勾选作用域</string>
+
+    <!-- 新增：引擎选择 -->
+    <string name="pref_engine_title">模糊引擎</string>
+    <string name="pref_engine_auto">自动 (推荐)</string>
+    <string name="pref_engine_window">系统级 (Window Blur)</string>
+    <string name="pref_engine_kawase">Kawase GPU 模糊</string>
+
+    <!-- 新增：模糊参数 -->
+    <string name="pref_pass_count">模糊 Pass 次数</string>
+    <string name="pref_saturation">饱和度增强</string>
+    <string name="pref_brightness">亮度调整</string>
+    <string name="pref_overlay_alpha_new">遮罩透明度 (%)</string>
+
+    <!-- 新增：高光 -->
+    <string name="pref_gloss_enable">启用顶部高光</string>
+    <string name="pref_gloss_enable_desc">在键盘顶部添加白色渐变高光</string>
+    <string name="pref_gloss_alpha">高光透明度 (%)</string>
+    <string name="pref_gloss_width">高光宽度 (dp)</string>
+</resources>

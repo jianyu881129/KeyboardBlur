@@ -1,0 +1,70 @@
+name: Build APK
+
+on:
+  push:
+    branches: [ main, master ]
+  pull_request:
+    branches: [ main, master ]
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          java-version: '17'
+          distribution: 'temurin'
+
+      - name: Setup Gradle
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.11.1'
+
+      - name: Accept Android SDK licenses
+        run: yes | sdkmanager --licenses || true
+
+      - name: Install Android SDK components
+        run: |
+          sdkmanager "platforms;android-35" "build-tools;35.0.0" "platform-tools"
+
+      - name: Generate Release Keystore
+        run: |
+          keytool -genkeypair \
+            -alias release \
+            -keyalg RSA -keysize 2048 \
+            -validity 36500 \
+            -keystore /tmp/release.jks \
+            -storepass keyboardblur2026 \
+            -keypass keyboardblur2026 \
+            -dname "CN=Wang Jianyu, OU=Dev, O=KeyboardBlur, L=Dongying, ST=Shandong, C=CN"
+
+      - name: Build Debug APK
+        run: gradle assembleDebug
+
+      - name: Build Release APK
+        env:
+          KEYSTORE_PATH: /tmp/release.jks
+          KEYSTORE_PASSWORD: keyboardblur2026
+          KEY_ALIAS: release
+          KEY_PASSWORD: keyboardblur2026
+        run: gradle assembleRelease
+
+      - name: Upload Debug APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: KeyboardBlur-debug
+          path: app/build/outputs/apk/debug/*.apk
+          if-no-files-found: error
+
+      - name: Upload Release APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: KeyboardBlur-release
+          path: app/build/outputs/apk/release/*.apk
+          if-no-files-found: error

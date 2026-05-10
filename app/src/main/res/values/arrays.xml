@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- LSPosed 作用域：仅豆包输入法 -->
+    <string-array name="xposed_scope">
+        <item>com.bytedance.android.doubaoime</item>
+    </string-array>
+</resources>

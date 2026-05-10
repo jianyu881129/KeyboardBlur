@@ -1,0 +1,3 @@
+-keep class com.miclaw.keyboardblur.HookEntry
+-keep class com.miclaw.keyboardblur.SettingsActivity
+-dontwarn de.robv.android.xposed.**
