@@ -100,13 +100,15 @@ public class BlurHelper {
         XposedBridge.log("[" + TAG + "] applyBlur: engine=" + config.resolveEngine()
             + " radius=" + config.getBlurRadius(context)
             + " gloss=" + config.isGlossEnabled()
-            + " corner=" + config.isCornerEnabled());
+            + " corner=" + config.isCornerEnabled()
+            + " rawEngine=" + config.getBlurEngine());
 
-        // IME 场景下，Android 12+ 强制使用 Window 引擎
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-            applyWindowBlur(context, window, config);
-        } else {
+        // 根据配置解析后的引擎选择，而非硬编码 API 级别
+        String resolvedEngine = config.resolveEngine();
+        if (BlurConfig.ENGINE_KAWASE.equals(resolvedEngine)) {
             applyKawaseBlur(context, window, config);
+        } else {
+            applyWindowBlur(context, window, config);
         }
     }
 

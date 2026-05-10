@@ -6,6 +6,8 @@ import android.content.res.Configuration;
 import android.os.Build;
 import android.util.Log;
 
+import de.robv.android.xposed.XposedBridge;
+
 import org.w3c.dom.Document;
 import org.w3c.dom.Element;
 import org.w3c.dom.NodeList;
@@ -346,14 +348,47 @@ public class BlurConfig {
     }
 
     /**
-     * 根据引擎配置和系统版本，解析实际应使用的引擎
+     * 根据引擎配置和系统版本，解析实际应使用的引擎。
+     *
+     * HyperOS/MIUI 上 Window.setBackgroundBlurRadius() 对 IME 窗口行为异常：
+     * 会把整个屏幕都糊了（IME 窗口的不透明键盘视图挡住了键盘区域的模糊，
+     * 导致键盘没变化但键盘之外的区域全糊）。因此 HyperOS 上 Auto 模式强制走 Kawase。
      */
     public String resolveEngine() {
         String engine = getBlurEngine();
         if (ENGINE_AUTO.equals(engine)) {
+            if (isHyperOSOrMIUI()) {
+                XposedBridge.log("[" + TAG + "] HyperOS/MIUI detected, forcing Kawase engine");
+                return ENGINE_KAWASE;
+            }
             return Build.VERSION.SDK_INT >= Build.VERSION_CODES.S ? ENGINE_WINDOW : ENGINE_KAWASE;
         }
         return engine;
+    }
+
+    /**
+     * 检测是否运行在 HyperOS / MIUI 上
+     */
+    private static boolean isHyperOSOrMIUI() {
+        try {
+            // 检查 System Properties
+            String miuiVersion = (String) Class.forName("android.os.SystemProperties")
+                    .getMethod("get", String.class, String.class)
+                    .invoke(null, "ro.miui.ui.version.name", "");
+            if (miuiVersion != null && !miuiVersion.isEmpty()) return true;
+
+            String hyperOS = (String) Class.forName("android.os.SystemProperties")
+                    .getMethod("get", String.class, String.class)
+                    .invoke(null, "ro.mi.os.version.name", "");
+            if (hyperOS != null && !hyperOS.isEmpty()) return true;
+
+            // 兜底：检查 Build.MANUFACTURER
+            if ("Xiaomi".equalsIgnoreCase(Build.MANUFACTURER)) return true;
+        } catch (Throwable t) {
+            // 反射失败，保守检查 MANUFACTURER
+            if ("Xiaomi".equalsIgnoreCase(Build.MANUFACTURER)) return true;
+        }
+        return false;
     }
 
     /**
