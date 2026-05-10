@@ -121,7 +121,10 @@ public class HookEntry implements IXposedHookLoadPackage {
     private void hookMethod(Class<?> clazz, String methodName, Class<?>[] paramTypes,
                             String label, Callback callback) {
         try {
-            XposedHelpers.findAndHookMethod(clazz, methodName, paramTypes, new XC_MethodHook() {
+            // 手动展开 paramTypes 到 Object[]，避免 Class<?>[] 作为单个对象传入 varargs
+            Object[] args = new Object[paramTypes.length + 1];
+            System.arraycopy(paramTypes, 0, args, 0, paramTypes.length);
+            args[paramTypes.length] = new XC_MethodHook() {
                 @Override
                 protected void afterHookedMethod(MethodHookParam param) {
                     try {
@@ -130,7 +133,8 @@ public class HookEntry implements IXposedHookLoadPackage {
                         log(label + " failed: " + t.getMessage());
                     }
                 }
-            });
+            };
+            XposedHelpers.findAndHookMethod(clazz, methodName, args);
             log("Hooked " + methodName);
         } catch (Throwable t) {
             log("Failed to hook " + methodName + ": " + t.getMessage());
