@@ -4,6 +4,15 @@ import android.content.Context;
 import android.content.SharedPreferences;
 import android.content.res.Configuration;
 import android.os.Build;
+import android.util.Log;
+
+import org.w3c.dom.Document;
+import org.w3c.dom.Element;
+import org.w3c.dom.NodeList;
+
+import java.io.File;
+import javax.xml.parsers.DocumentBuilder;
+import javax.xml.parsers.DocumentBuilderFactory;
 
 /**
  * 模糊配置管理
@@ -36,7 +45,7 @@ public class BlurConfig {
     private static final String KEY_OVERLAY_ALPHA_NEW = "overlay_alpha_new";
 
     // ---- 原有默认值 ----
-    private static final boolean DEFAULT_ENABLED = false;
+    private static final boolean DEFAULT_ENABLED = true;
     private static final int DEFAULT_BLUR_PORTRAIT = 20;
     private static final int DEFAULT_BLUR_LANDSCAPE = 5;
     private static final boolean DEFAULT_CORNER_ENABLED = false;
@@ -77,6 +86,196 @@ public class BlurConfig {
      */
     public static BlurConfig from(SharedPreferences prefs) {
         return new BlurConfig(prefs);
+    }
+
+    private static final String TAG = "KeyboardBlur";
+
+    /**
+     * 创建默认配置实例（当 XSharedPreferences 和 XML 都读不到时使用）
+     */
+    public static BlurConfig createDefault() {
+        android.content.Context ctx = null;
+        try {
+            // 尝试通过反射获取 ActivityThread 的 Context
+            Object at = Class.forName("android.app.ActivityThread").getMethod("currentActivityThread").invoke(null);
+            ctx = (Context) Class.forName("android.app.ActivityThread").getMethod("getSystemContext").invoke(at);
+        } catch (Exception e) {
+            // ignore
+        }
+        SharedPreferences defaults = null;
+        if (ctx != null) {
+            defaults = ctx.getSharedPreferences("keyboard_blur_config", Context.MODE_PRIVATE);
+            // 写入默认值确保 isEnabled() 返回 true
+            defaults.edit()
+                .putBoolean(KEY_ENABLED, true)
+                .putInt(KEY_BLUR_PORTRAIT, 20)
+                .putInt(KEY_BLUR_LANDSCAPE, 5)
+                .putBoolean(KEY_GLOSS_ENABLED, true)
+                .putInt(KEY_GLOSS_ALPHA, 30)
+                .putFloat(KEY_GLOSS_WIDTH_DP, 60f)
+                .putInt(KEY_OVERLAY_ALPHA_NEW, 0)
+                .apply();
+        }
+        if (defaults != null) {
+            return new BlurConfig(defaults);
+        }
+        // 绝对兜底：创建内存级 SharedPreferences
+        // 这种方式在 production 环境下不应该出现，但作为最终安全网
+        return null;
+    }
+
+    /**
+     * 直接从 XML 文件解析配置（XSharedPreferences 失败时的 fallback）
+     */
+    public static BlurConfig fromXmlFile(String packageName) {
+        try {
+            // 尝试多个可能的路径
+            String[] paths = {
+                "/data/user_de/0/" + packageName + "/shared_prefs/keyboard_blur_config.xml",
+                "/data/data/" + packageName + "/shared_prefs/keyboard_blur_config.xml",
+                "/data/user/0/" + packageName + "/shared_prefs/keyboard_blur_config.xml"
+            };
+            File f = null;
+            for (String p : paths) {
+                File candidate = new File(p);
+                if (candidate.exists() && candidate.canRead()) {
+                    f = candidate;
+                    break;
+                }
+            }
+            if (f == null) {
+                Log.e(TAG, "No readable SharedPreferences XML found");
+                return null;
+            }
+            Log.i(TAG, "Reading config from: " + f.getAbsolutePath());
+
+            DocumentBuilderFactory dbf = DocumentBuilderFactory.newInstance();
+            dbf.setFeature("http://apache.org/xml/features/disallow-doctype-decl", true);
+            DocumentBuilder db = dbf.newDocumentBuilder();
+            Document doc = db.parse(f);
+
+            // 解析 <boolean> 标签
+            NodeList booleans = doc.getElementsByTagName("boolean");
+            boolean enabled = DEFAULT_ENABLED;
+            boolean cornerEnabled = DEFAULT_CORNER_ENABLED;
+            boolean glossEnabled = DEFAULT_GLOSS_ENABLED;
+            for (int i = 0; i < booleans.getLength(); i++) {
+                Element el = (Element) booleans.item(i);
+                String name = el.getAttribute("name");
+                boolean val = "true".equals(el.getAttribute("value"));
+                switch (name) {
+                    case "enabled": enabled = val; break;
+                    case "corner_enabled": cornerEnabled = val; break;
+                    case "gloss_enabled": glossEnabled = val; break;
+                }
+            }
+
+            // 解析 <int> 标签
+            int blurPortrait = DEFAULT_BLUR_PORTRAIT;
+            int blurLandscape = DEFAULT_BLUR_LANDSCAPE;
+            int overlayAlpha = DEFAULT_OVERLAY_ALPHA;
+            int dimAmount = DEFAULT_DIM_AMOUNT;
+            int glossAlpha = DEFAULT_GLOSS_ALPHA;
+            int overlayColor = DEFAULT_OVERLAY_COLOR_NEW;
+            int overlayAlphaNew = DEFAULT_OVERLAY_ALPHA_NEW;
+            NodeList ints = doc.getElementsByTagName("int");
+            for (int i = 0; i < ints.getLength(); i++) {
+                Element el = (Element) ints.item(i);
+                String name = el.getAttribute("name");
+                int val = Integer.parseInt(el.getAttribute("value"));
+                switch (name) {
+                    case "blur_portrait_radius": blurPortrait = val; break;
+                    case "blur_landscape_radius": blurLandscape = val; break;
+                    case "overlay_alpha": overlayAlpha = val; break;
+                    case "dim_amount": dimAmount = val; break;
+                    case "gloss_alpha": glossAlpha = val; break;
+                    case "overlay_color": overlayColor = val; break;
+                    case "overlay_alpha_new": overlayAlphaNew = val; break;
+                }
+            }
+
+            // 解析 <float> 标签
+            float cornerRadius = DEFAULT_CORNER_RADIUS;
+            float glossWidthDp = DEFAULT_GLOSS_WIDTH_DP;
+            NodeList floats = doc.getElementsByTagName("float");
+            for (int i = 0; i < floats.getLength(); i++) {
+                Element el = (Element) floats.item(i);
+                String name = el.getAttribute("name");
+                float val = Float.parseFloat(el.getAttribute("value"));
+                switch (name) {
+                    case "corner_radius_dp": cornerRadius = val; break;
+                    case "gloss_width_dp": glossWidthDp = val; break;
+                }
+            }
+
+            // 解析 <string> 标签
+            String blurEngine = DEFAULT_BLUR_ENGINE;
+            NodeList strings = doc.getElementsByTagName("string");
+            for (int i = 0; i < strings.getLength(); i++) {
+                Element el = (Element) strings.item(i);
+                String name = el.getAttribute("name");
+                String val = el.getTextContent().trim();
+                if ("blur_engine".equals(name)) blurEngine = val;
+            }
+
+            Log.i(TAG, "XML parse success: enabled=" + enabled + " portrait=" + blurPortrait
+                + " engine=" + blurEngine + " gloss=" + glossEnabled);
+
+            // 将解析结果包装为 SharedPreferences（使用内存实现）
+            android.content.SharedPreferences memPrefs = new MemSharedPreferences();
+            memPrefs.edit()
+                .putBoolean(KEY_ENABLED, enabled)
+                .putInt(KEY_BLUR_PORTRAIT, blurPortrait)
+                .putInt(KEY_BLUR_LANDSCAPE, blurLandscape)
+                .putBoolean(KEY_CORNER_ENABLED, cornerEnabled)
+                .putFloat(KEY_CORNER_RADIUS, cornerRadius)
+                .putInt(KEY_OVERLAY_ALPHA, overlayAlpha)
+                .putInt(KEY_DIM_AMOUNT, dimAmount)
+                .putString(KEY_BLUR_ENGINE, blurEngine)
+                .putBoolean(KEY_GLOSS_ENABLED, glossEnabled)
+                .putInt(KEY_GLOSS_ALPHA, glossAlpha)
+                .putFloat(KEY_GLOSS_WIDTH_DP, glossWidthDp)
+                .putInt(KEY_OVERLAY_COLOR, overlayColor)
+                .putInt(KEY_OVERLAY_ALPHA_NEW, overlayAlphaNew)
+                .apply();
+            return new BlurConfig(memPrefs);
+        } catch (Exception e) {
+            Log.e(TAG, "XML fallback failed: " + e.getMessage());
+            return null;
+        }
+    }
+
+    /**
+     * 内存级 SharedPreferences 实现，用于 XML fallback
+     */
+    private static class MemSharedPreferences implements SharedPreferences {
+        private final java.util.Map<String, Object> map = new java.util.HashMap<>();
+        @Override public java.util.Map<String, ?> getAll() { return java.util.Collections.unmodifiableMap(map); }
+        @Override public String getString(String key, String defValue) { return map.containsKey(key) ? (String) map.get(key) : defValue; }
+        @Override public java.util.Set<String> getStringSet(String key, java.util.Set<String> defValues) { return map.containsKey(key) ? (java.util.Set<String>) map.get(key) : defValues; }
+        @Override public int getInt(String key, int defValue) { return map.containsKey(key) ? (int) map.get(key) : defValue; }
+        @Override public long getLong(String key, long defValue) { return map.containsKey(key) ? (long) map.get(key) : defValue; }
+        @Override public float getFloat(String key, float defValue) { return map.containsKey(key) ? (float) map.get(key) : defValue; }
+        @Override public boolean getBoolean(String key, boolean defValue) { return map.containsKey(key) ? (boolean) map.get(key) : defValue; }
+        @Override public boolean contains(String key) { return map.containsKey(key); }
+        @Override public SharedPreferences.Editor edit() { return new MemEditor(this); }
+        @Override public void registerOnSharedPreferenceChangeListener(OnSharedPreferenceChangeListener l) {}
+        @Override public void unregisterOnSharedPreferenceChangeListener(OnSharedPreferenceChangeListener l) {}
+        private static class MemEditor implements SharedPreferences.Editor {
+            private final MemSharedPreferences target;
+            private final java.util.Map<String, Object> pending = new java.util.HashMap<>();
+            MemEditor(MemSharedPreferences t) { target = t; }
+            @Override public SharedPreferences.Editor putString(String k, String v) { pending.put(k, v); return this; }
+            @Override public SharedPreferences.Editor putStringSet(String k, java.util.Set<String> v) { pending.put(k, v); return this; }
+            @Override public SharedPreferences.Editor putInt(String k, int v) { pending.put(k, v); return this; }
+            @Override public SharedPreferences.Editor putLong(String k, long v) { pending.put(k, v); return this; }
+            @Override public SharedPreferences.Editor putFloat(String k, float v) { pending.put(k, v); return this; }
+            @Override public SharedPreferences.Editor putBoolean(String k, boolean v) { pending.put(k, v); return this; }
+            @Override public SharedPreferences.Editor remove(String k) { pending.remove(k); target.map.remove(k); return this; }
+            @Override public SharedPreferences.Editor clear() { pending.clear(); target.map.clear(); return this; }
+            @Override public void apply() { target.map.putAll(pending); }
+            @Override public boolean commit() { target.map.putAll(pending); return true; }
+        }
     }
 
     // ======== 原有 Getters ========

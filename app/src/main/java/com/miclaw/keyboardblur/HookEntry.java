@@ -142,15 +142,24 @@ public class HookEntry implements IXposedHookLoadPackage {
     }
 
     private void applyBlurFromParam(XC_MethodHook.MethodHookParam param) {
-        android.inputmethodservice.InputMethodService service =
-                (android.inputmethodservice.InputMethodService) param.thisObject;
-        Context context = service.getApplicationContext();
-        Dialog dialog = service.getWindow();
-        if (dialog != null) {
-            Window window = dialog.getWindow();
-            if (window != null) {
-                BlurHelper.applyBlur(context, window);
+        try {
+            android.inputmethodservice.InputMethodService service =
+                    (android.inputmethodservice.InputMethodService) param.thisObject;
+            Context context = service.getApplicationContext();
+            Dialog dialog = service.getWindow();
+            if (dialog != null) {
+                Window window = dialog.getWindow();
+                if (window != null) {
+                    log("applyBlurFromParam: context=" + (context != null) + " window=" + window);
+                    BlurHelper.applyBlur(context, window);
+                } else {
+                    log("applyBlurFromParam: window is null (dialog.getWindow())");
+                }
+            } else {
+                log("applyBlurFromParam: dialog is null (service.getWindow())");
             }
+        } catch (Throwable t) {
+            log("applyBlurFromParam failed: " + t.getMessage());
         }
     }
 

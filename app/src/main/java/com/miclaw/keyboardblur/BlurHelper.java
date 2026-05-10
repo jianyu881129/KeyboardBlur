@@ -38,36 +38,71 @@ public class BlurHelper {
     private static final int WINDOW_GLOSS_VIEW_ID = 0x7F001235;
 
     /**
-     * Hook 端通过 XSharedPreferences 跨进程读取模块配置。
-     * 修复：之前用 BlurConfig.get(context) 读的是 IME 进程的 SharedPreferences，
-     * 和模块 SettingsActivity 写入的不是同一个文件，导致所有配置都是默认值。
+     * Hook 端通过三级 fallback 读取模块配置：
+     * 1. XSharedPreferences（LSPosed 标准方式）
+     * 2. 直接解析 XML 文件（跨进程文件读取兜底）
+     * 3. 默认配置（保证模块至少能跑起来）
      */
     private static BlurConfig getBlurConfig() {
+        // 方式1: XSharedPreferences
         try {
             XSharedPreferences xPrefs = new XSharedPreferences(
                     "com.miclaw.keyboardblur", "keyboard_blur_config");
             xPrefs.reload();
-            return BlurConfig.from(xPrefs);
+            BlurConfig config = BlurConfig.from(xPrefs);
+            if (config != null && config.isEnabled()) {
+                XposedBridge.log("[" + TAG + "] Config loaded via XSharedPreferences: enabled=true");
+                return config;
+            }
+            XposedBridge.log("[" + TAG + "] XSP returned config but enabled=false, trying XML fallback");
         } catch (Throwable t) {
-            XposedBridge.log("[" + TAG + "] Failed to read config via XSharedPreferences: " + t.getMessage());
-            return null;
+            XposedBridge.log("[" + TAG + "] XSharedPreferences failed: " + t.getMessage());
         }
+
+        // 方式2: 直接读 XML 文件
+        try {
+            BlurConfig xmlConfig = BlurConfig.fromXmlFile("com.miclaw.keyboardblur");
+            if (xmlConfig != null && xmlConfig.isEnabled()) {
+                XposedBridge.log("[" + TAG + "] Config loaded via XML fallback");
+                return xmlConfig;
+            }
+            XposedBridge.log("[" + TAG + "] XML fallback returned null or disabled");
+        } catch (Throwable t) {
+            XposedBridge.log("[" + TAG + "] XML fallback failed: " + t.getMessage());
+        }
+
+        // 方式3: 使用默认配置（enabled=true, radius=20）
+        XposedBridge.log("[" + TAG + "] All config methods failed, using DEFAULT config (enabled=true, radius=20)");
+        BlurConfig defaultConfig = BlurConfig.createDefault();
+        return defaultConfig;
     }
 
     /**
      * 对输入法窗口应用模糊效果（双引擎自动选择）
      */
     public static void applyBlur(Context context, Window window) {
-        if (window == null) return;
+        if (window == null) {
+            XposedBridge.log("[" + TAG + "] applyBlur: window is null, skip");
+            return;
+        }
 
         BlurConfig config = getBlurConfig();
-        if (config == null || !config.isEnabled()) {
+        if (config == null) {
+            XposedBridge.log("[" + TAG + "] applyBlur: config is null after all fallbacks, skip");
+            return;
+        }
+        if (!config.isEnabled()) {
+            XposedBridge.log("[" + TAG + "] applyBlur: disabled in config, removing blur");
             removeBlur(window, context);
             return;
         }
 
+        XposedBridge.log("[" + TAG + "] applyBlur: engine=" + config.resolveEngine()
+            + " radius=" + config.getBlurRadius(context)
+            + " gloss=" + config.isGlossEnabled()
+            + " corner=" + config.isCornerEnabled());
+
         // IME 场景下，Android 12+ 强制使用 Window 引擎
-        // Kawase 引擎的全屏 overlay 在 IME 窗口内截屏会把键盘本身也截进去，导致全黑
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
             applyWindowBlur(context, window, config);
         } else {
