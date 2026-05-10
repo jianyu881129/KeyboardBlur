@@ -3,7 +3,7 @@ plugins {
 }
 
 android {
-    namespace 'com.miclaw.glasskey'
+    namespace 'com.miclaw.keyboardblur'
     compileSdk 35
 
     defaultConfig {
