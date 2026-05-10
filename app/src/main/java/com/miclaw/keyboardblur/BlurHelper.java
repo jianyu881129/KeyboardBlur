@@ -12,6 +12,8 @@ import android.view.Window;
 import android.view.WindowManager;
 import android.widget.FrameLayout;
 
+import de.robv.android.xposed.XposedBridge;
+
 /**
  * 模糊效果核心实现 — 双引擎架构
  * 
@@ -39,16 +41,12 @@ public class BlurHelper {
             return;
         }
 
-        String engine = config.resolveEngine();
-
-        if (BlurConfig.ENGINE_WINDOW.equals(engine) && Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+        // IME 场景下，Android 12+ 强制使用 Window 引擎
+        // Kawase 引擎的全屏 overlay 在 IME 窗口内截屏会把键盘本身也截进去，导致全黑
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
             applyWindowBlur(context, window, config);
-        } else if (BlurConfig.ENGINE_KAWASE.equals(engine)
-                || (BlurConfig.ENGINE_AUTO.equals(engine) && Build.VERSION.SDK_INT < Build.VERSION_CODES.S)) {
-            applyKawaseBlur(context, window, config);
         } else {
-            // AUTO 模式在 12+ 走 window
-            applyWindowBlur(context, window, config);
+            applyKawaseBlur(context, window, config);
         }
     }
 
@@ -61,6 +59,7 @@ public class BlurHelper {
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.S) return;
 
         int blurRadius = config.getBlurRadius(context);
+        XposedBridge.log("[" + TAG + "] applyWindowBlur: radius=" + blurRadius);
 
         // 添加模糊标记
         window.addFlags(WindowManager.LayoutParams.FLAG_BLUR_BEHIND);
