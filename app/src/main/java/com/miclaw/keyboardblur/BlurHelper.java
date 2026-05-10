@@ -12,7 +12,13 @@ import android.view.Window;
 import android.view.WindowManager;
 import android.widget.FrameLayout;
 
+import android.graphics.Canvas;
+import android.graphics.LinearGradient;
+import android.graphics.Paint;
+import android.graphics.Shader;
+
 import de.robv.android.xposed.XposedBridge;
+import de.robv.android.xposed.XSharedPreferences;
 
 /**
  * 模糊效果核心实现 — 双引擎架构
@@ -28,6 +34,25 @@ public class BlurHelper {
 
     // 用于标记已添加的 BlurOverlayView，避免重复添加
     private static final int OVERLAY_VIEW_ID = 0x7F001234;
+    // Window 引擎的高光 View ID
+    private static final int WINDOW_GLOSS_VIEW_ID = 0x7F001235;
+
+    /**
+     * Hook 端通过 XSharedPreferences 跨进程读取模块配置。
+     * 修复：之前用 BlurConfig.get(context) 读的是 IME 进程的 SharedPreferences，
+     * 和模块 SettingsActivity 写入的不是同一个文件，导致所有配置都是默认值。
+     */
+    private static BlurConfig getBlurConfig() {
+        try {
+            XSharedPreferences xPrefs = new XSharedPreferences(
+                    "com.miclaw.keyboardblur", "keyboard_blur_config");
+            xPrefs.reload();
+            return BlurConfig.from(xPrefs);
+        } catch (Throwable t) {
+            XposedBridge.log("[" + TAG + "] Failed to read config via XSharedPreferences: " + t.getMessage());
+            return null;
+        }
+    }
 
     /**
      * 对输入法窗口应用模糊效果（双引擎自动选择）
@@ -35,8 +60,8 @@ public class BlurHelper {
     public static void applyBlur(Context context, Window window) {
         if (window == null) return;
 
-        BlurConfig config = BlurConfig.get(context);
-        if (!config.isEnabled()) {
+        BlurConfig config = getBlurConfig();
+        if (config == null || !config.isEnabled()) {
             removeBlur(window, context);
             return;
         }
@@ -61,8 +86,10 @@ public class BlurHelper {
         int blurRadius = config.getBlurRadius(context);
         XposedBridge.log("[" + TAG + "] applyWindowBlur: radius=" + blurRadius);
 
-        // 添加模糊标记
-        window.addFlags(WindowManager.LayoutParams.FLAG_BLUR_BEHIND);
+        // 修复：移除 FLAG_BLUR_BEHIND
+        // 该 flag 在 HyperOS/MIUI 上会让 IME 背景直接渲染为黑色，而不是模糊效果
+        // setBackgroundBlurRadius() 不需要此 flag 即可工作
+        window.clearFlags(WindowManager.LayoutParams.FLAG_BLUR_BEHIND);
         window.setBackgroundBlurRadius(blurRadius);
 
         // 将 DecorView 背景设为透明，让模糊效果透出来
@@ -72,8 +99,72 @@ public class BlurHelper {
         // 应用遮罩层和圆角
         applyOverlayAndCorner(context, window, config);
 
+        // 应用顶部高光渐变（之前 Window 引擎路径缺失此功能）
+        applyWindowGloss(context, window, config);
+
         // 确保 Kawase overlay 被移除（如果之前用过）
         removeKawaseOverlay(window);
+    }
+
+    // ==================== 高光渐变（Window 引擎用） ====================
+
+    /**
+     * 为 Window 引擎添加顶部高光渐变 View。
+     * 之前此功能仅在 Kawase 路径的 BlurOverlayView 中实现。
+     */
+    private static void applyWindowGloss(Context context, Window window, BlurConfig config) {
+        View decorView = window.getDecorView();
+        if (!(decorView instanceof ViewGroup)) return;
+        ViewGroup parent = (ViewGroup) decorView;
+
+        // 移除旧的高光 View
+        View oldGloss = parent.findViewById(WINDOW_GLOSS_VIEW_ID);
+        if (oldGloss != null) {
+            parent.removeView(oldGloss);
+        }
+
+        if (!config.isGlossEnabled()) return;
+
+        float density = context.getResources().getDisplayMetrics().density;
+        int glossAlpha = Math.round(config.getGlossAlpha() * 255f / 100f);
+        float glossWidthPx = config.getGlossWidthDp() * density;
+
+        View glossView = new View(context) {
+            @Override
+            protected void onDraw(Canvas canvas) {
+                Paint paint = new Paint(Paint.ANTI_ALIAS_FLAG);
+                float w = getWidth();
+                float h = glossWidthPx;
+                paint.setShader(new LinearGradient(
+                        0, 0, 0, h,
+                        Color.argb(glossAlpha, 255, 255, 255),
+                        Color.TRANSPARENT,
+                        Shader.TileMode.CLAMP));
+                canvas.drawRect(0, 0, w, h, paint);
+            }
+        };
+        glossView.setId(WINDOW_GLOSS_VIEW_ID);
+        glossView.setWillNotDraw(false);
+        glossView.setClickable(false);
+        glossView.setFocusable(false);
+
+        parent.addView(glossView, new ViewGroup.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT,
+                ViewGroup.LayoutParams.MATCH_PARENT));
+    }
+
+    /**
+     * 移除 Window 引擎的高光 View
+     */
+    private static void removeWindowGloss(Window window) {
+        if (window == null) return;
+        View decorView = window.getDecorView();
+        if (decorView instanceof ViewGroup) {
+            View glossView = ((ViewGroup) decorView).findViewById(WINDOW_GLOSS_VIEW_ID);
+            if (glossView != null) {
+                ((ViewGroup) decorView).removeView(glossView);
+            }
+        }
     }
 
     // ==================== Kawase GPU 模糊引擎 ====================
@@ -250,6 +341,9 @@ public class BlurHelper {
         // 移除 Kawase overlay
         removeKawaseOverlay(window);
 
+        // 移除 Window 引擎的高光 View
+        removeWindowGloss(window);
+
         // 恢复默认背景
         window.setBackgroundDrawable(null);
     }
@@ -264,6 +358,7 @@ public class BlurHelper {
             window.setBackgroundBlurRadius(0);
         }
         removeKawaseOverlay(window);
+        removeWindowGloss(window);
         window.setBackgroundDrawable(null);
     }
 
